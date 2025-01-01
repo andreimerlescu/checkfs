@@ -1,8 +1,8 @@
-package go_checkfs
+package checkfs
 
 import (
-	"github.com/andreimerlescu/go-checkfs/directory"
-	"github.com/andreimerlescu/go-checkfs/file"
+	"github.com/andreimerlescu/checkfs/directory"
+	"github.com/andreimerlescu/checkfs/file"
 )
 
 func File(path string, opts file.Options) error {

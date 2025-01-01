@@ -2,24 +2,42 @@ package file
 
 import (
 	"fmt"
-	"github.com/andreimerlescu/go-checkfs/common"
 	"os"
+	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 )
 
 type Options struct {
-	ReadOnly       bool   // Check if the file is read-only
-	RequireWrite   bool   // Check if the file is writable
-	RequireOwner   string // Check if the file has a specific owner
-	RequireGroup   string // Check if the file has a specific group
-	RequireBaseDir string // Check if the file is inside a specific base directory
+	CreatedBefore  time.Time   // Check file creation time
+	ModifiedBefore time.Time   // Check file modified time
+	RequireExt     string      // Check if the file is of an extension
+	RequirePrefix  string      // Check if the file name begins with a prefix
+	RequireOwner   string      // Check if the file has a specific owner
+	RequireGroup   string      // Check if the file has a specific group
+	RequireBaseDir string      // Check if the file is inside a specific base directory
+	IsLessThan     int64       // Check if the size is less than
+	IsSize         int64       // Check the file size
+	IsGreaterThan  int64       // Check if the size is greater than
+	IsBaseNameLen  int         // Check if the file name length
+	IsFileMode     os.FileMode // Check the os.FileMode value
+	RequireWrite   bool        // Check if the file is writable
+	ReadOnly       bool        // Check if the file is read-only
+	WriteOnly      bool        // Check if the file is write-only
+	Exists         bool        // Check if the file exists
 }
 
 // File performs the file checks
 func File(path string, opts Options) error {
-	// Get file info
 	info, err := os.Stat(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			if opts.Exists {
+				return fmt.Errorf("file does not exist: %s", path)
+			}
+			return nil
+		}
 		return fmt.Errorf("failed to stat file %s: %w", path, err)
 	}
 
@@ -28,21 +46,93 @@ func File(path string, opts Options) error {
 		return fmt.Errorf("not a regular file: %s", path)
 	}
 
-	// Check if file is inside the required base directory
-	if opts.RequireBaseDir != "" {
-		inBase, err := common.IsPathInBase(path, opts.RequireBaseDir)
-		if err != nil {
-			return err
+	// Check file creation time
+	if !opts.CreatedBefore.IsZero() {
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return fmt.Errorf("unable to get detailed file stats for %s", path)
 		}
-		if !inBase {
+		createTime := time.Unix(stat.Ctim.Sec, stat.Ctim.Nsec)
+		if createTime.After(opts.CreatedBefore) {
+			return fmt.Errorf("file created after specified time: %s", path)
+		}
+	}
+
+	// Check modification time
+	if !opts.ModifiedBefore.IsZero() && info.ModTime().After(opts.ModifiedBefore) {
+		return fmt.Errorf("file modified after specified time: %s", path)
+	}
+
+	// Check file extension
+	if opts.RequireExt != "" {
+		ext := filepath.Ext(path)
+		if ext != opts.RequireExt {
+			return fmt.Errorf("incorrect file extension for %s: expected %s, got %s",
+				path, opts.RequireExt, ext)
+		}
+	}
+
+	// Check file prefix
+	if opts.RequirePrefix != "" {
+		basename := filepath.Base(path)
+		if !strings.HasPrefix(basename, opts.RequirePrefix) {
+			return fmt.Errorf("incorrect file prefix for %s: expected prefix %s",
+				path, opts.RequirePrefix)
+		}
+	}
+
+	// Check base directory
+	if opts.RequireBaseDir != "" {
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path for %s: %w", path, err)
+		}
+		absBaseDir, err := filepath.Abs(opts.RequireBaseDir)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path for base dir %s: %w", opts.RequireBaseDir, err)
+		}
+		if !strings.HasPrefix(absPath, absBaseDir) {
 			return &ErrCheckBadBaseDir{Path: path, BaseDir: opts.RequireBaseDir}
 		}
 	}
 
-	// Get file permissions
+	// Check file size constraints
+	size := info.Size()
+	if opts.IsSize != 0 && size != opts.IsSize {
+		return fmt.Errorf("incorrect file size for %s: expected %d, got %d",
+			path, opts.IsSize, size)
+	}
+	if opts.IsLessThan != 0 && size >= opts.IsLessThan {
+		return fmt.Errorf("file size %d is not less than %d: %s",
+			size, opts.IsLessThan, path)
+	}
+	if opts.IsGreaterThan != 0 && size <= opts.IsGreaterThan {
+		return fmt.Errorf("file size %d is not greater than %d: %s",
+			size, opts.IsGreaterThan, path)
+	}
+
+	// Check base name length
+	if opts.IsBaseNameLen != 0 {
+		basename := filepath.Base(path)
+		if len(basename) != opts.IsBaseNameLen {
+			return fmt.Errorf("incorrect base name length for %s: expected %d, got %d",
+				path, opts.IsBaseNameLen, len(basename))
+		}
+	}
+
+	// Check file mode
 	mode := info.Mode()
+	if opts.IsFileMode != 0 && mode != opts.IsFileMode {
+		return fmt.Errorf("incorrect file mode for %s: expected %s, got %s",
+			path, opts.IsFileMode, mode)
+	}
+
+	// Check permissions
 	if opts.ReadOnly && mode.Perm()&0222 != 0 {
 		return &ErrCheckOpenPermissions{Path: path}
+	}
+	if opts.WriteOnly && mode.Perm()&0444 != 0 {
+		return fmt.Errorf("file has read permissions when write-only required: %s", path)
 	}
 	if opts.RequireWrite && mode.Perm()&0200 == 0 {
 		return &ErrCheckNoWritePermissions{Path: path}
