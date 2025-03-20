@@ -10,22 +10,24 @@ import (
 )
 
 type Options struct {
-	CreatedBefore  time.Time   // Check file creation time
-	ModifiedBefore time.Time   // Check file modified time
-	RequireExt     string      // Check if the file is of an extension
-	RequirePrefix  string      // Check if the file name begins with a prefix
-	RequireOwner   string      // Check if the file has a specific owner
-	RequireGroup   string      // Check if the file has a specific group
-	RequireBaseDir string      // Check if the file is inside a specific base directory
-	IsLessThan     int64       // Check if the size is less than
-	IsSize         int64       // Check the file size
-	IsGreaterThan  int64       // Check if the size is greater than
-	IsBaseNameLen  int         // Check if the file name length
-	IsFileMode     os.FileMode // Check the os.FileMode value
-	RequireWrite   bool        // Check if the file is writable
-	ReadOnly       bool        // Check if the file is read-only
-	WriteOnly      bool        // Check if the file is write-only
-	Exists         bool        // Check if the file exists
+	CreatedBefore      time.Time   // Check file creation time
+	ModifiedBefore     time.Time   // Check file modified time
+	IsLessThan         int64       // Check if the size is less than
+	IsSize             int64       // Check the file size
+	IsGreaterThan      int64       // Check if the size is greater than
+	RequireExt         string      // Check if the file is of an extension
+	RequirePrefix      string      // Check if the file name begins with a prefix
+	RequireOwner       string      // Check if the file has a specific owner
+	RequireGroup       string      // Check if the file has a specific group
+	RequireBaseDir     string      // Check if the file is inside a specific base directory
+	IsFileMode         os.FileMode // Check the os.FileMode value
+	MorePermissiveThan os.FileMode // Check if mode is at least this permissive (e.g., >= 0444)
+	LessPermissiveThan os.FileMode // Check if mode is less permissive than this (e.g., <= 0400)
+	IsBaseNameLen      int         // Check if the file name length
+	RequireWrite       bool        // Check if the file is writable
+	ReadOnly           bool        // Check if the file is read-only
+	WriteOnly          bool        // Check if the file is write-only
+	Exists             bool        // Check if the file exists
 }
 
 // File performs the file checks
@@ -127,6 +129,26 @@ func File(path string, opts Options) error {
 			path, opts.IsFileMode, mode)
 	}
 
+	// Check more permissive than
+	if opts.MorePermissiveThan != 0 {
+		perms := mode.Perm()
+		required := opts.MorePermissiveThan
+		if perms&required != required {
+			return fmt.Errorf("file mode for %s is less permissive than required: expected at least %o, got %o",
+				path, required, perms)
+		}
+	}
+
+	// Check less permissive than
+	if opts.LessPermissiveThan != 0 {
+		perms := mode.Perm()
+		limit := opts.LessPermissiveThan
+		if perms&^limit != 0 {
+			return fmt.Errorf("file mode for %s is more permissive than allowed: expected at most %o, got %o",
+				path, limit, perms)
+		}
+	}
+
 	// Check permissions
 	if opts.ReadOnly && mode.Perm()&0222 != 0 {
 		return &ErrCheckOpenPermissions{Path: path}
@@ -156,7 +178,6 @@ func File(path string, opts Options) error {
 
 	return nil
 }
-
 type ErrCheckOpenPermissions struct{ Path string }
 type ErrCheckNoWritePermissions struct{ Path string }
 type ErrCheckBadOwner struct{ Path, Expected, Actual string }

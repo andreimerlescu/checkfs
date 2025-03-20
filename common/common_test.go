@@ -1,8 +1,62 @@
 package common
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
+
+func TestCommonUtils(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "test.txt")
+	os.WriteFile(file, []byte("test"), 0644)
+
+	t.Run("GetCreationTime", func(t *testing.T) {
+		ctime, err := GetCreationTime(file)
+		if err != nil {
+			t.Errorf("GetCreationTime failed: %v", err)
+		}
+		if ctime.IsZero() {
+			t.Error("Expected non-zero creation time")
+		}
+	})
+
+	t.Run("HasPermissions", func(t *testing.T) {
+		ok, err := HasPermissions(file, 0444)
+		if err != nil || !ok {
+			t.Errorf("HasPermissions(0444) failed: %v, got %v", err, ok)
+		}
+	})
+
+	t.Run("IsMorePermissiveThan", func(t *testing.T) {
+		ok, err := IsMorePermissiveThan(file, 0444)
+		if err != nil || !ok {
+			t.Errorf("IsMorePermissiveThan(0444) failed: %v, got %v", err, ok)
+		}
+		ok, err = IsMorePermissiveThan(file, 0666)
+		if err != nil || ok {
+			t.Errorf("IsMorePermissiveThan(0666) should fail: %v, got %v", err, ok)
+		}
+	})
+
+	t.Run("IsLessPermissiveThan", func(t *testing.T) {
+		ok, err := IsLessPermissiveThan(file, 0777)
+		if err != nil || !ok {
+			t.Errorf("IsLessPermissiveThan(0777) failed: %v, got %v", err, ok)
+		}
+		ok, err = IsLessPermissiveThan(file, 0400)
+		if err != nil || ok {
+			t.Errorf("IsLessPermissiveThan(0400) should fail: %v, got %v", err, ok)
+		}
+	})
+
+	t.Run("SanitizePath", func(t *testing.T) {
+		clean, err := SanitizePath("/dir//file/../test")
+		if err != nil || clean != "/dir/test" {
+			t.Errorf("SanitizePath failed: %v, got %v", err, clean)
+		}
+	})
+}
 
 func TestIsPathInBase(t *testing.T) {
 	tests := []struct {

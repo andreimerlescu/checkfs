@@ -13,6 +13,7 @@ func TestFile(t *testing.T) {
 	regularFile := filepath.Join(dir, "regular.txt")
 	prefixFile := filepath.Join(dir, "prefix_test.txt")
 	largeFile := filepath.Join(dir, "large.txt")
+	permFile := filepath.Join(dir, "perm.txt")
 
 	// Create regular test file
 	if err := os.WriteFile(regularFile, []byte("test content"), 0644); err != nil {
@@ -28,6 +29,11 @@ func TestFile(t *testing.T) {
 	largeBuf := make([]byte, 1024*1024) // 1MB file
 	if err := os.WriteFile(largeFile, largeBuf, 0644); err != nil {
 		t.Fatalf("Failed to create large test file: %v", err)
+	}
+
+	// Create file for permission tests
+	if err := os.WriteFile(permFile, []byte("perm test"), 0644); err != nil {
+		t.Fatalf("Failed to create perm test file: %v", err)
 	}
 
 	// Create symlink for testing
@@ -82,9 +88,9 @@ func TestFile(t *testing.T) {
 		{"Invalid base name length", regularFile, Options{IsBaseNameLen: 5}, true},
 
 		// Permission tests
-		{"Valid read-only", regularFile, Options{ReadOnly: true}, true},           // 0644 has write bits set
-		{"Valid write required", regularFile, Options{RequireWrite: true}, false}, // 0644 has write permission
-		{"Valid write-only", regularFile, Options{WriteOnly: true}, true},         // 0644 has read bits set
+		{"Valid read-only", regularFile, Options{ReadOnly: true}, true},           // 0644 has write bits
+		{"Valid write required", regularFile, Options{RequireWrite: true}, false}, // 0644 has write
+		{"Valid write-only", regularFile, Options{WriteOnly: true}, true},         // 0644 has read bits
 
 		// File mode tests
 		{"Valid file mode", regularFile, Options{IsFileMode: 0644}, false},
@@ -107,13 +113,45 @@ func TestFile(t *testing.T) {
 			IsLessThan:     10, // This should fail
 			RequireWrite:   true,
 		}, true},
+
+		// New MorePermissiveThan tests
+		{"MorePermissiveThan 0444 with 0644", permFile, Options{MorePermissiveThan: 0444}, false},
+		{"MorePermissiveThan 0444 with 0400", permFile, Options{MorePermissiveThan: 0444}, true}, // Set perms later
+		{"MorePermissiveThan 0444 with 0744", permFile, Options{MorePermissiveThan: 0444}, false}, // Set perms later
+		{"MorePermissiveThan 0644 with 0644", permFile, Options{MorePermissiveThan: 0644}, false},
+		{"MorePermissiveThan 0644 with 0444", permFile, Options{MorePermissiveThan: 0644}, true}, // Set perms later
+
+		// New LessPermissiveThan tests
+		{"LessPermissiveThan 0400 with 0400", permFile, Options{LessPermissiveThan: 0400}, false}, // Set perms later
+		{"LessPermissiveThan 0400 with 0600", permFile, Options{LessPermissiveThan: 0400}, true},  // Set perms later
+		{"LessPermissiveThan 0777 with 0644", permFile, Options{LessPermissiveThan: 0777}, false},
+		{"LessPermissiveThan 0644 with 0744", permFile, Options{LessPermissiveThan: 0644}, true},  // Set perms later
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Adjust permissions for specific tests
+			switch tt.name {
+			case "MorePermissiveThan 0444 with 0400":
+				os.Chmod(permFile, 0400)
+			case "MorePermissiveThan 0444 with 0744":
+				os.Chmod(permFile, 0744)
+			case "MorePermissiveThan 0644 with 0444":
+				os.Chmod(permFile, 0444)
+			case "LessPermissiveThan 0400 with 0400":
+				os.Chmod(permFile, 0400)
+			case "LessPermissiveThan 0400 with 0600":
+				os.Chmod(permFile, 0600)
+			case "LessPermissiveThan 0644 with 0744":
+				os.Chmod(permFile, 0744)
+			}
 			err := File(tt.path, tt.opts)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("File() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			// Reset permFile to 0644 after each test
+			if tt.path == permFile {
+				os.Chmod(permFile, 0644)
 			}
 		})
 	}
@@ -137,6 +175,10 @@ func BenchmarkFile(b *testing.B) {
 			IsLessThan:     1000,
 			RequireWrite:   true,
 			ReadOnly:       false,
+		}},
+		{"PermissiveChecks", Options{
+			MorePermissiveThan: 0444,
+			LessPermissiveThan: 0777,
 		}},
 	}
 

@@ -10,26 +10,19 @@ import (
 )
 
 type Options struct {
-	ReadOnly       bool   // Check if the directory is read-only
-	RequireWrite   bool   // Check if the directory is writable
-	RequireOwner   string // Check if the directory has a specific owner
-	RequireGroup   string // Check if the directory has a specific group
-	RequireBaseDir string // Check if the directory is inside a specific base directory
-
-	// NEW OPTIONS
-
-	CreatedBefore  time.Time // Check file creation time
-	ModifiedBefore time.Time // Check file modified time
-	RequireExt     string    // Check if the file is of an extension
-	RequirePrefix  string    // Check if the file name begins with a prefix
-
-	// user intends to create the directory, so if true, verify that we can create a directory in the parent of the path
-	WillCreate bool
-
-	// if true, then require the directory to exist ; combining with WillCreate means Exists requires the Create to be
-	// successful - the script should (only if it doesn't exist) try to create the file with a random number in it, then
-	// delete the file - if both operations succeed, then Exists is true when WillCreate is true
-	Exists bool
+	CreatedBefore      time.Time   // Check directory creation time
+	ModifiedBefore     time.Time   // Check directory modified time
+	RequireOwner       string      // Check if the directory has a specific owner
+	RequireGroup       string      // Check if the directory has a specific group
+	RequireBaseDir     string      // Check if the directory is inside a specific base directory
+	RequireExt         string      // Check if the directory has an extension (unlikely, but included for parity)
+	RequirePrefix      string      // Check if the directory name begins with a prefix
+	MorePermissiveThan os.FileMode // Check if mode is at least this permissive (e.g., >= 0444)
+	LessPermissiveThan os.FileMode // Check if mode is less permissive than this (e.g., <= 0400)
+	ReadOnly           bool        // Check if the directory is read-only
+	RequireWrite       bool        // Check if the directory is writable
+	WillCreate         bool        // User intends to create the directory, so if true, verify that we can create a directory in the parent of the path
+	Exists             bool        // If true, require the directory to exist; combining with WillCreate means Exists requires the Create to be successful - the script should (only if it doesn't exist) try to create the file with a random number in it, then delete the file - if both operations succeed, then Exists is true when WillCreate is true
 }
 
 // Directory performs the directory checks
@@ -37,7 +30,6 @@ func Directory(path string, opts Options) error {
 	// Handle WillCreate logic first
 	if opts.WillCreate {
 		parentDir := filepath.Dir(path)
-		// Check if parent directory exists and is writable
 		parentInfo, err := os.Stat(parentDir)
 		if err != nil {
 			return fmt.Errorf("failed to access parent directory %s: %w", parentDir, err)
@@ -120,6 +112,26 @@ func Directory(path string, opts Options) error {
 	}
 	if opts.RequireWrite && mode.Perm()&0200 == 0 {
 		return &ErrCheckDirNoWritePermissions{Path: path}
+	}
+
+	// Check more permissive than
+	if opts.MorePermissiveThan != 0 {
+		perms := mode.Perm()
+		required := opts.MorePermissiveThan
+		if perms&required != required {
+			return fmt.Errorf("directory mode for %s is less permissive than required: expected at least %o, got %o",
+				path, required, perms)
+		}
+	}
+
+	// Check less permissive than
+	if opts.LessPermissiveThan != 0 {
+		perms := mode.Perm()
+		limit := opts.LessPermissiveThan
+		if perms&^limit != 0 {
+			return fmt.Errorf("directory mode for %s is more permissive than allowed: expected at most %o, got %o",
+				path, limit, perms)
+		}
 	}
 
 	// Get directory owner and group

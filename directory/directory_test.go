@@ -15,6 +15,7 @@ func TestDirectory(t *testing.T) {
 	nonExistentDir := filepath.Join(baseDir, "nonexistent")
 	readOnlyDir := filepath.Join(baseDir, "readonly_dir")
 	writeableDir := filepath.Join(baseDir, "writeable_dir")
+	permDir := filepath.Join(baseDir, "perm_dir")
 
 	// Create test directories with specific permissions
 	if err := os.Mkdir(testDir, 0755); err != nil {
@@ -28,6 +29,9 @@ func TestDirectory(t *testing.T) {
 	}
 	if err := os.Mkdir(writeableDir, 0755); err != nil {
 		t.Fatalf("Failed to create writeable directory: %v", err)
+	}
+	if err := os.Mkdir(permDir, 0755); err != nil {
+		t.Fatalf("Failed to create perm directory: %v", err)
 	}
 
 	// Create a test file to validate non-directory path
@@ -57,20 +61,21 @@ func TestDirectory(t *testing.T) {
 			WillCreate: true,
 			Exists:     true,
 		}, false},
-
 		{"Will create with existing target", testDir, Options{
 			WillCreate: true,
 			Exists:     true,
 		}, false},
-
 		{"Will create without existence check", filepath.Join(baseDir, "just_create"), Options{
 			WillCreate: true,
 		}, false},
-		// Combined existence and creation tests
-		{"Will create and require existence", filepath.Join(baseDir, "create_exist"),
-			Options{WillCreate: true, Exists: true}, false},
-		{"Will create without existence check", filepath.Join(baseDir, "just_create"),
-			Options{WillCreate: true, Exists: false}, false},
+		{"Will create and require existence", filepath.Join(baseDir, "create_exist"), Options{
+			WillCreate: true,
+			Exists:     true,
+		}, false},
+		{"Will create without existence check", filepath.Join(baseDir, "just_create"), Options{
+			WillCreate: true,
+			Exists:     false,
+		}, false},
 
 		// Base directory tests
 		{"Valid base directory", testDir, Options{Exists: true, RequireBaseDir: baseDir}, false},
@@ -97,6 +102,19 @@ func TestDirectory(t *testing.T) {
 		{"Valid group", testDir, Options{Exists: true, RequireGroup: fmt.Sprint(os.Getgid())}, false},
 		{"Invalid group", testDir, Options{Exists: true, RequireGroup: "99999"}, true},
 
+		// MorePermissiveThan tests
+		{"MorePermissiveThan 0444 with 0755", permDir, Options{Exists: true, MorePermissiveThan: 0444}, false},
+		{"MorePermissiveThan 0444 with 0400", permDir, Options{Exists: true, MorePermissiveThan: 0444}, true}, // Set perms later
+		{"MorePermissiveThan 0444 with 0744", permDir, Options{Exists: true, MorePermissiveThan: 0444}, false}, // Set perms later
+		{"MorePermissiveThan 0644 with 0755", permDir, Options{Exists: true, MorePermissiveThan: 0644}, false},
+		{"MorePermissiveThan 0644 with 0444", permDir, Options{Exists: true, MorePermissiveThan: 0644}, true},  // Set perms later
+
+		// LessPermissiveThan tests
+		{"LessPermissiveThan 0400 with 0400", permDir, Options{Exists: true, LessPermissiveThan: 0400}, false}, // Set perms later
+		{"LessPermissiveThan 0400 with 0755", permDir, Options{Exists: true, LessPermissiveThan: 0400}, true},
+		{"LessPermissiveThan 0777 with 0755", permDir, Options{Exists: true, LessPermissiveThan: 0777}, false},
+		{"LessPermissiveThan 0755 with 0777", permDir, Options{Exists: true, LessPermissiveThan: 0755}, true},  // Set perms later
+
 		// Multiple conditions
 		{"Multiple valid conditions", writeableDir, Options{
 			Exists:         true,
@@ -114,9 +132,26 @@ func TestDirectory(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Adjust permissions for specific tests
+			switch tt.name {
+			case "MorePermissiveThan 0444 with 0400":
+				os.Chmod(permDir, 0400)
+			case "MorePermissiveThan 0444 with 0744":
+				os.Chmod(permDir, 0744)
+			case "MorePermissiveThan 0644 with 0444":
+				os.Chmod(permDir, 0444)
+			case "LessPermissiveThan 0400 with 0400":
+				os.Chmod(permDir, 0400)
+			case "LessPermissiveThan 0755 with 0777":
+				os.Chmod(permDir, 0777)
+			}
 			err := Directory(tt.path, tt.opts)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Directory() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			// Reset permDir to 0755 after each test
+			if tt.path == permDir {
+				os.Chmod(permDir, 0755)
 			}
 		})
 	}
@@ -124,6 +159,9 @@ func TestDirectory(t *testing.T) {
 
 func BenchmarkDirectory(b *testing.B) {
 	dir := b.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "bench"), 0755); err != nil {
+		b.Fatalf("Failed to create benchmark directory: %v", err)
+	}
 
 	cases := []struct {
 		name string
@@ -137,15 +175,20 @@ func BenchmarkDirectory(b *testing.B) {
 			Exists:         true,
 			WillCreate:     true,
 			RequireWrite:   true,
-			RequirePrefix:  "test",
+			RequirePrefix:  "bench",
 			RequireBaseDir: dir,
+		}},
+		{"PermissiveChecks", Options{
+			Exists:             true,
+			MorePermissiveThan: 0444,
+			LessPermissiveThan: 0777,
 		}},
 	}
 
 	for _, bc := range cases {
 		b.Run(bc.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_ = Directory(dir, bc.opts)
+				_ = Directory(filepath.Join(dir, "bench"), bc.opts)
 			}
 		})
 	}
