@@ -5,9 +5,92 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/andreimerlescu/checkfs/common"
 )
+
+type CreateKind int8
+
+const (
+	NoAction    CreateKind = iota
+	IfNotExists CreateKind = iota
+	IfExists    CreateKind = iota
+)
+
+// Create is used to describe the File you wish to Create, you are not required to set the Path,
+// but you can if you wish to change it
+type Create struct {
+	Path     string      // Path stores where the resource will be created
+	Kind     CreateKind  // Kind requires either IfNotExists or another CreateKind
+	FileMode os.FileMode // FileMode allows you to set os.ModePerm etc.
+	OpenFlag int         // OpenFlag allows you to use os.O_CREATE|os.O_TRUNC|os.O_WRONLY
+	Size     int64       // Size allows you to fill a file with zeros, throws error if applied to a directory
+}
+
+const (
+	KB = 1 << (10 * iota)
+	MB
+	GB
+	TB
+)
+
+func (create *Create) file() error {
+	if create.Kind != IfNotExists {
+		return nil
+	}
+	theFile, err := os.OpenFile(create.Path, create.OpenFlag, create.FileMode)
+	if err != nil {
+		return fmt.Errorf("could not create file: %w", err)
+	}
+	defer theFile.Close()
+
+	if create.Size > TB {
+		return fmt.Errorf("file size too big (max 1TB): %d", create.Size)
+	}
+
+	if create.Size > 0 {
+		b := make([]byte, create.Size)
+		for i := int64(0); i < create.Size; i++ {
+			b[i] = byte(i)
+		}
+		_, err := theFile.Seek(0, 0)
+		if err != nil {
+			return err
+		}
+		bytesWritten, err := theFile.Write(b)
+		if err != nil {
+			return fmt.Errorf("could not write to file: %w", err)
+		}
+		if bytesWritten != len(b) {
+			return fmt.Errorf("didnt write %d of %d to file", bytesWritten, create.Size)
+		}
+	}
+
+	return nil
+}
+
+func (create *Create) replaceFile() error {
+	if create.Kind != IfExists {
+		return nil
+	}
+	err := os.Remove(create.Path)
+	if err != nil {
+		return fmt.Errorf("could not remove file: %w", err)
+	}
+	return create.file()
+}
+
+func (create *Create) Run() error {
+	switch create.Kind {
+	case IfExists:
+		return create.replaceFile()
+	case IfNotExists:
+		return create.file()
+	default:
+		return fmt.Errorf("create kind not supported: %v", create.Kind)
+	}
+}
 
 type Options struct {
 	CreatedBefore      time.Time   // Check file creation time
@@ -28,6 +111,7 @@ type Options struct {
 	ReadOnly           bool        // Check if the file is read-only
 	WriteOnly          bool        // Check if the file is write-only
 	Exists             bool        // Check if the file exists
+	Create             Create      // Allow the user to create the file
 }
 
 // File performs the file checks
@@ -35,6 +119,12 @@ func File(path string, opts Options) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			if opts.Create.Kind == IfNotExists {
+				if len(opts.Create.Path) == 0 {
+					opts.Create.Path = path
+				}
+				return opts.Create.Run()
+			}
 			if opts.Exists {
 				return fmt.Errorf("file does not exist: %s", path)
 			}
@@ -50,11 +140,10 @@ func File(path string, opts Options) error {
 
 	// Check file creation time
 	if !opts.CreatedBefore.IsZero() {
-		stat, ok := info.Sys().(*syscall.Stat_t)
-		if !ok {
-			return fmt.Errorf("unable to get detailed file stats for %s", path)
+		createTime, err := common.GetCreationTime(path)
+		if err != nil {
+			return fmt.Errorf("failed to get creation time for %s: %w", path, err)
 		}
-		createTime := time.Unix(stat.Ctim.Sec, stat.Ctim.Nsec)
 		if createTime.After(opts.CreatedBefore) {
 			return fmt.Errorf("file created after specified time: %s", path)
 		}
@@ -85,15 +174,11 @@ func File(path string, opts Options) error {
 
 	// Check base directory
 	if opts.RequireBaseDir != "" {
-		absPath, err := filepath.Abs(path)
+		isInBase, err := common.IsPathInBase(path, opts.RequireBaseDir)
 		if err != nil {
-			return fmt.Errorf("failed to get absolute path for %s: %w", path, err)
+			return fmt.Errorf("failed to check base directory for %s: %w", path, err)
 		}
-		absBaseDir, err := filepath.Abs(opts.RequireBaseDir)
-		if err != nil {
-			return fmt.Errorf("failed to get absolute path for base dir %s: %w", opts.RequireBaseDir, err)
-		}
-		if !strings.HasPrefix(absPath, absBaseDir) {
+		if !isInBase {
 			return &ErrCheckBadBaseDir{Path: path, BaseDir: opts.RequireBaseDir}
 		}
 	}
@@ -131,21 +216,25 @@ func File(path string, opts Options) error {
 
 	// Check more permissive than
 	if opts.MorePermissiveThan != 0 {
-		perms := mode.Perm()
-		required := opts.MorePermissiveThan
-		if perms&required != required {
+		isMorePermissive, err := common.IsMorePermissiveThan(path, opts.MorePermissiveThan)
+		if err != nil {
+			return fmt.Errorf("failed to check permissions for %s: %w", path, err)
+		}
+		if !isMorePermissive {
 			return fmt.Errorf("file mode for %s is less permissive than required: expected at least %o, got %o",
-				path, required, perms)
+				path, opts.MorePermissiveThan, mode.Perm())
 		}
 	}
 
 	// Check less permissive than
 	if opts.LessPermissiveThan != 0 {
-		perms := mode.Perm()
-		limit := opts.LessPermissiveThan
-		if perms&^limit != 0 {
+		isLessPermissive, err := common.IsLessPermissiveThan(path, opts.LessPermissiveThan)
+		if err != nil {
+			return fmt.Errorf("failed to check permissions for %s: %w", path, err)
+		}
+		if !isLessPermissive {
 			return fmt.Errorf("file mode for %s is more permissive than allowed: expected at most %o, got %o",
-				path, limit, perms)
+				path, opts.LessPermissiveThan, mode.Perm())
 		}
 	}
 
@@ -160,40 +249,41 @@ func File(path string, opts Options) error {
 		return &ErrCheckNoWritePermissions{Path: path}
 	}
 
-	// Get file owner and group
-	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-		if opts.RequireOwner != "" {
-			owner := fmt.Sprint(stat.Uid)
-			if owner != opts.RequireOwner {
-				return &ErrCheckBadOwner{Path: path, Expected: opts.RequireOwner, Actual: owner}
-			}
+	// Check owner and group
+	if opts.RequireOwner != "" || opts.RequireGroup != "" {
+		uid, gid, err := common.GetOwnerAndGroup(path)
+		if err != nil {
+			return fmt.Errorf("failed to get owner/group for %s: %w", path, err)
 		}
-		if opts.RequireGroup != "" {
-			group := fmt.Sprint(stat.Gid)
-			if group != opts.RequireGroup {
-				return &ErrCheckBadGroup{Path: path, Expected: opts.RequireGroup, Actual: group}
-			}
+		if opts.RequireOwner != "" && uid != opts.RequireOwner {
+			return &ErrCheckBadOwner{Path: path, Expected: opts.RequireOwner, Actual: uid}
+		}
+		if opts.RequireGroup != "" && gid != opts.RequireGroup {
+			return &ErrCheckBadGroup{Path: path, Expected: opts.RequireGroup, Actual: gid}
 		}
 	}
 
 	return nil
 }
+
 type ErrCheckOpenPermissions struct{ Path string }
 type ErrCheckNoWritePermissions struct{ Path string }
 type ErrCheckBadOwner struct{ Path, Expected, Actual string }
 type ErrCheckBadGroup struct{ Path, Expected, Actual string }
-
 type ErrCheckBadBaseDir struct{ Path, BaseDir string }
 
 func (e *ErrCheckOpenPermissions) Error() string {
 	return fmt.Sprintf("permissions too open: %s", e.Path)
 }
+
 func (e *ErrCheckNoWritePermissions) Error() string {
 	return fmt.Sprintf("no write permission: %s", e.Path)
 }
+
 func (e *ErrCheckBadOwner) Error() string {
 	return fmt.Sprintf("bad owner for %s: expected %s, got %s", e.Path, e.Expected, e.Actual)
 }
+
 func (e *ErrCheckBadGroup) Error() string {
 	return fmt.Sprintf("bad group for %s: expected %s, got %s", e.Path, e.Expected, e.Actual)
 }

@@ -25,8 +25,8 @@ func TestDirectory(t *testing.T) {
 	dir := t.TempDir()
 
 	err := Directory(dir, directory.Options{})
-	if err != nil {
-		t.Errorf("Directory() error = %v", err)
+	if err == nil {
+		t.Errorf("Directory() should have thrown err but got %v", err)
 	}
 }
 

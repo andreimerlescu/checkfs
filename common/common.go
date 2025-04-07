@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -37,19 +38,6 @@ func RelStartsWithParent(rel string) bool {
 	return strings.HasPrefix(rel, "..") && (len(rel) == 2 || strings.HasPrefix(rel[2:], string(filepath.Separator)))
 }
 
-// GetCreationTime retrieves the creation time of a file or directory
-func GetCreationTime(path string) (time.Time, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to stat %s: %w", path, err)
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return time.Time{}, fmt.Errorf("unable to get detailed stats for %s", path)
-	}
-	return time.Unix(stat.Ctim.Sec, stat.Ctim.Nsec), nil
-}
-
 // HasPermissions checks if a file or directory has at least the specified permissions
 func HasPermissions(path string, perms os.FileMode) (bool, error) {
 	info, err := os.Stat(path)
@@ -78,19 +66,6 @@ func IsLessPermissiveThan(path string, maxPerms os.FileMode) (bool, error) {
 	}
 	perms := info.Mode().Perm()
 	return perms&^maxPerms == 0, nil
-}
-
-// GetOwnerAndGroup retrieves the owner UID and group GID of a file or directory
-func GetOwnerAndGroup(path string) (uid, gid string, err error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to stat %s: %w", path, err)
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return "", "", fmt.Errorf("unable to get detailed stats for %s", path)
-	}
-	return fmt.Sprint(stat.Uid), fmt.Sprint(stat.Gid), nil
 }
 
 // SanitizePath removes redundant separators and resolves relative components in a path

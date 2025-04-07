@@ -1,3 +1,5 @@
+// Package checkfs provides utilities to validate and manage files and directories
+// with customizable options for permissions, ownership, and creation behavior.
 package checkfs
 
 import (
