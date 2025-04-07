@@ -35,7 +35,6 @@ type Create struct {
 	Kind     CreateKind  // Kind requires either CreateFileIfNotExists or IfNotExists CreateKind
 	FileMode os.FileMode // FileMode allows you to set os.ModePerm etc.
 	Path     string      // Path stores where the resource will be created
-	OpenFlag int         // OpenFlag allows you to use os.O_CREATE|os.O_TRUNC|os.O_WRONLY
 }
 
 // directory will consume a pointer to Create and apply the policy against the host

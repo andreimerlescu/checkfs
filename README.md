@@ -8,6 +8,8 @@ Utility for checking File and Directory with Options.
 go get -u github.com/andreimerlescu/checkfs
 ```
 
+This package is built for **Go 1.18+**!
+
 ## Usage
 
 ### Check File
@@ -17,11 +19,13 @@ package main
 
 import (
 	"fmt"
-	check "github.com/andreimerlescu/checkfs/file"
+	
+	check "github.com/andreimerlescu/checkfs"
+	"github.com/andreimerlescu/checkfs/file"
 )
 
 func main() {
-	err := check.File("/path/to/file.txt", check.Options{
+	err := check.File("/path/to/file.txt", file.Options{
 		Exists: true,
 	})
 	if err != nil {
@@ -40,11 +44,13 @@ package main
 
 import (
 	"fmt"
-	check "github.com/andreimerlescu/checkfs/directory"
+	
+	check "github.com/andreimerlescu/checkfs"
+	"github.com/andreimerlescu/checkfs/directory"
 )
 
 func main() {
-	err := check.Directory("/path/to/directory", check.Options{
+	err := check.Directory("/path/to/directory", directory.Options{
 		RequireWrite: true,
 	})
 	if err != nil {
@@ -78,6 +84,73 @@ func main() {
 | `IsFileMode`     | `os.FileMode` | Verify the file permissions match this mode                 |
 | `WriteOnly`      | `bool`        | Check if the file is write-only                             |
 | `Exists`         | `bool`        | Verify whether the file exists or not                       |
+| `Create`         | `Create{}`    | Creates the resource.                                       | 
+
+
+### `file.Create{}`
+
+When you want to use `checkfs` to `Create` a new `File` or `Directory`, you can use:
+
+| Property   | Type                     | Default                        |
+|------------|--------------------------|--------------------------------|
+| `Kind`     | `uint8`                  | `file.NoAction`                | 
+| `FileMode` | `os.FileMode` / `uint32` | `0`                            |
+| `OpenFlag` | `int`                    | `0`                            | 
+| `Path`     | `string`                 | Uses path from original call\* | 
+| `Size`     | `int64`                  | `0`                            | 
+
+\*  See the usage of the `.Path` property in `file.Create{}`:
+
+```go
+package main
+
+import (
+    "fmt"
+    "filepath"
+    "os"
+    
+    check "github.com/andreimerlescu/checkfs"
+    "github.com/andreimerlescu/checkfs/file"
+)
+
+func main() {
+    // USING CLI ARG PARAM 1 AS PATH `go run . /my/path/as/args/1`
+    path := os.Args[1]
+	err := check.File(path, file.Options{
+		file.Create: file.Create{
+			Kind:     file.IfNotExists,
+			OpenFlag: os.O_CREATE|os.O_APPEND|os.O_WRONLY,
+			FileMode: 0644,
+		},
+	})
+    // OR 
+    testFile := file.Create{
+        Path: filepath.Join(os.TempDir(), "test-file.yaml"),
+        OpenFlag: os.O_CREATE|os.O_TRUNC|os.O_WRONLY,
+        Kind: file.IfNotExists, // will only run if /tmp/test-file.yaml doesn't exist
+        FileMode: 0644,
+        // Size: 1776, // no size defined here, so it will be an empty file
+    }
+    err := testFile.Run()
+    if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+    // OR
+    anotherFile := file.Create{
+		Path: filepath.Join(os.TempDir(), "test-file.yaml"),
+		OpenFlag: os.O_CREATE|os.O_TRUNC|os.O_WRONLY,
+		Kind: file.IfExists, // deletes old empty file then creates new file
+		FileMode: 0644,
+        Size: 1776, // new file will be populated with 1776 bytes
+    }
+	err := anotherFile.Run()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+```
 
 ### `directory.Options`
 
@@ -93,249 +166,65 @@ func main() {
 | `RequirePrefix`  | `string`    | Ensure the directory name begins with a specific prefix          |
 | `WillCreate`     | `bool`      | Verify ability to create the directory if it doesn't exist       |
 | `Exists`         | `bool`      | Verify whether the directory exists or not                       |
+| `Create`         | `Create{}`  | Creates the resource.                                            | 
 
-## Test Results
+### `directory.Create{}`
 
-### Common
+When you want to use `checkfs` to `Create` a new `File` or `Directory`, you can use: 
 
-Functions shared between `file.File` and `directory.Directory`
+| Property   | Type                     | Default                        |
+|------------|--------------------------|--------------------------------|
+| `Kind`     | `uint8`                  | `file.NoAction`                | 
+| `FileMode` | `os.FileMode` / `uint32` | `0`                            |
+| `Path`     | `string`                 | Uses path from original call\* | 
+| `Size`     | `int64`                  | `0`                            | 
 
-#### Unit Test
+\*  See the usage of the `.Path` property in `directory.Create{}`: 
 
-```log
-=== RUN   TestIsPathInBase
---- PASS: TestIsPathInBase (0.00s)
-=== RUN   TestIsPathInBase/Valid_path_in_base
-    --- PASS: TestIsPathInBase/Valid_path_in_base (0.00s)
-=== RUN   TestIsPathInBase/Path_outside_base
-    --- PASS: TestIsPathInBase/Path_outside_base (0.00s)
-=== RUN   TestIsPathInBase/Path_escaping_base
-    --- PASS: TestIsPathInBase/Path_escaping_base (0.00s)
-=== RUN   TestIsPathInBase/Empty_path
-    --- PASS: TestIsPathInBase/Empty_path (0.00s)
-=== RUN   TestIsPathInBase/Empty_base_directory
-    --- PASS: TestIsPathInBase/Empty_base_directory (0.00s)
-=== RUN   TestRelStartsWithParent
---- PASS: TestRelStartsWithParent (0.00s)
-=== RUN   TestRelStartsWithParent/Relative_path_escapes
-    --- PASS: TestRelStartsWithParent/Relative_path_escapes (0.00s)
-=== RUN   TestRelStartsWithParent/Relative_path_inside
-    --- PASS: TestRelStartsWithParent/Relative_path_inside (0.00s)
-=== RUN   TestRelStartsWithParent/Current_directory
-    --- PASS: TestRelStartsWithParent/Current_directory (0.00s)
-=== RUN   TestRelStartsWithParent/Escaping_with_separator
-    --- PASS: TestRelStartsWithParent/Escaping_with_separator (0.00s)
-PASS
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+    
+    check "github.com/andreimerlescu/checkfs"
+    "github.com/andreimerlescu/checkfs/directory"
+)
+
+func main() {
+    path := os.Args[1]
+	err := check.Directory(path, directory.Options{
+		directory.Create: directory.Create{
+			Kind:     directory.IfNotExists,
+			FileMode: 0755,
+		},
+	})
+    if err != nil {
+		fmt.Println(err)
+		os.Exit(0)
+	}
+    // OR
+    err := directory.Create{
+		Kind: directory.IfNotExists, // only if the path doesnt exist shall this run
+		Path: filepath.Join(os.TempDir(), "test-directory"), // create a new path
+		FileMode: 0755, // set its mode to 0755 (standard) default mode is 0
+    }
+    // OR replace that directory again with...
+	err := directory.Create{
+		Kind: directory.IfExists, // deletes old directory first, then creates a new one
+		Path: filepath.Join(os.TempDir(), "test-directory"), // reuse a path that already exists
+		FileMode: 0755, // uses these permissions for the new directory
+	}
+}
 ```
 
-#### Benchmark Test
+The `directory.Create{}` struct has `.Run() error` exposed that you can run outside of the `.Check() error` func.
 
-```log
-goos: linux
-goarch: amd64
-pkg: github.com/andreimerlescu/checkfs/common
-cpu: Intel(R) Xeon(R) W-3245 CPU @ 3.20GHz
-BenchmarkIsPathInBase
-BenchmarkIsPathInBase-16           	 1000000	      1137 ns/op
-BenchmarkRelStartsWithParent
-BenchmarkRelStartsWithParent-16    	 7390912	       159.9 ns/op
-PASS
-```
-
-### File
-
-#### Unit Test
-
-```log
-=== RUN   TestFile
---- PASS: TestFile (0.00s)
-=== RUN   TestFile/Valid_regular_file
-    --- PASS: TestFile/Valid_regular_file (0.00s)
-=== RUN   TestFile/Non-existent_file_with_Exists=false
-    --- PASS: TestFile/Non-existent_file_with_Exists=false (0.00s)
-=== RUN   TestFile/Non-existent_file_with_Exists=true
-    --- PASS: TestFile/Non-existent_file_with_Exists=true (0.00s)
-=== RUN   TestFile/Directory_path
-    --- PASS: TestFile/Directory_path (0.00s)
-=== RUN   TestFile/Valid_base_directory
-    --- PASS: TestFile/Valid_base_directory (0.00s)
-=== RUN   TestFile/Invalid_base_directory
-    --- PASS: TestFile/Invalid_base_directory (0.00s)
-=== RUN   TestFile/Valid_extension
-    --- PASS: TestFile/Valid_extension (0.00s)
-=== RUN   TestFile/Invalid_extension
-    --- PASS: TestFile/Invalid_extension (0.00s)
-=== RUN   TestFile/Valid_prefix
-    --- PASS: TestFile/Valid_prefix (0.00s)
-=== RUN   TestFile/Invalid_prefix
-    --- PASS: TestFile/Invalid_prefix (0.00s)
-=== RUN   TestFile/Valid_creation_time
-    --- PASS: TestFile/Valid_creation_time (0.00s)
-=== RUN   TestFile/Invalid_creation_time
-    --- PASS: TestFile/Invalid_creation_time (0.00s)
-=== RUN   TestFile/Valid_modification_time
-    --- PASS: TestFile/Valid_modification_time (0.00s)
-=== RUN   TestFile/Invalid_modification_time
-    --- PASS: TestFile/Invalid_modification_time (0.00s)
-=== RUN   TestFile/Valid_exact_size
-    --- PASS: TestFile/Valid_exact_size (0.00s)
-=== RUN   TestFile/Invalid_exact_size
-    --- PASS: TestFile/Invalid_exact_size (0.00s)
-=== RUN   TestFile/Valid_size_less_than
-    --- PASS: TestFile/Valid_size_less_than (0.00s)
-=== RUN   TestFile/Invalid_size_less_than
-    --- PASS: TestFile/Invalid_size_less_than (0.00s)
-=== RUN   TestFile/Valid_size_greater_than
-    --- PASS: TestFile/Valid_size_greater_than (0.00s)
-=== RUN   TestFile/Invalid_size_greater_than
-    --- PASS: TestFile/Invalid_size_greater_than (0.00s)
-=== RUN   TestFile/Valid_base_name_length
-    --- PASS: TestFile/Valid_base_name_length (0.00s)
-=== RUN   TestFile/Invalid_base_name_length
-    --- PASS: TestFile/Invalid_base_name_length (0.00s)
-=== RUN   TestFile/Valid_read-only
-    --- PASS: TestFile/Valid_read-only (0.00s)
-=== RUN   TestFile/Valid_write_required
-    --- PASS: TestFile/Valid_write_required (0.00s)
-=== RUN   TestFile/Valid_write-only
-    --- PASS: TestFile/Valid_write-only (0.00s)
-=== RUN   TestFile/Valid_file_mode
-    --- PASS: TestFile/Valid_file_mode (0.00s)
-=== RUN   TestFile/Invalid_file_mode
-    --- PASS: TestFile/Invalid_file_mode (0.00s)
-=== RUN   TestFile/Valid_symlink
-    --- PASS: TestFile/Valid_symlink (0.00s)
-=== RUN   TestFile/Symlink_with_valid_base_dir
-    --- PASS: TestFile/Symlink_with_valid_base_dir (0.00s)
-=== RUN   TestFile/Multiple_valid_conditions
-    --- PASS: TestFile/Multiple_valid_conditions (0.00s)
-=== RUN   TestFile/Multiple_conditions_with_one_invalid
-    --- PASS: TestFile/Multiple_conditions_with_one_invalid (0.00s)
-PASS
-```
-
-#### Benchmark Test
-
-```log
-goos: linux
-goarch: amd64
-pkg: github.com/andreimerlescu/checkfs/file
-cpu: Intel(R) Xeon(R) W-3245 CPU @ 3.20GHz
-BenchmarkFile
-BenchmarkFile/BasicChecks
-BenchmarkFile/BasicChecks-16         	 1345123	       882.3 ns/op
-BenchmarkFile/ExtensiveChecks
-BenchmarkFile/ExtensiveChecks-16     	 1100227	      1053 ns/op
-PASS
-```
-
-### Directory
-
-#### Unit Test
-
-```log
-=== RUN   TestDirectory
---- PASS: TestDirectory (0.00s)
-=== RUN   TestDirectory/Valid_existing_directory
-    --- PASS: TestDirectory/Valid_existing_directory (0.00s)
-=== RUN   TestDirectory/Non-existent_directory_with_Exists=false
-    --- PASS: TestDirectory/Non-existent_directory_with_Exists=false (0.00s)
-=== RUN   TestDirectory/Non-existent_directory_with_Exists=true
-    --- PASS: TestDirectory/Non-existent_directory_with_Exists=true (0.00s)
-=== RUN   TestDirectory/Non-directory_path
-    --- PASS: TestDirectory/Non-directory_path (0.00s)
-=== RUN   TestDirectory/Will_create_in_existing_parent
-    --- PASS: TestDirectory/Will_create_in_existing_parent (0.00s)
-=== RUN   TestDirectory/Will_create_with_existing_target
-    --- PASS: TestDirectory/Will_create_with_existing_target (0.00s)
-=== RUN   TestDirectory/Will_create_without_existence_check
-    --- PASS: TestDirectory/Will_create_without_existence_check (0.00s)
-=== RUN   TestDirectory/Will_create_and_require_existence
-    --- PASS: TestDirectory/Will_create_and_require_existence (0.00s)
-=== RUN   TestDirectory/Will_create_without_existence_check#01
-    --- PASS: TestDirectory/Will_create_without_existence_check#01 (0.00s)
-=== RUN   TestDirectory/Valid_base_directory
-    --- PASS: TestDirectory/Valid_base_directory (0.00s)
-=== RUN   TestDirectory/Invalid_base_directory
-    --- PASS: TestDirectory/Invalid_base_directory (0.00s)
-=== RUN   TestDirectory/Valid_prefix
-    --- PASS: TestDirectory/Valid_prefix (0.00s)
-=== RUN   TestDirectory/Invalid_prefix
-    --- PASS: TestDirectory/Invalid_prefix (0.00s)
-=== RUN   TestDirectory/Valid_creation_time
-    --- PASS: TestDirectory/Valid_creation_time (0.00s)
-=== RUN   TestDirectory/Invalid_creation_time
-    --- PASS: TestDirectory/Invalid_creation_time (0.00s)
-=== RUN   TestDirectory/Valid_modification_time
-    --- PASS: TestDirectory/Valid_modification_time (0.00s)
-=== RUN   TestDirectory/Invalid_modification_time
-    --- PASS: TestDirectory/Invalid_modification_time (0.00s)
-=== RUN   TestDirectory/Read-only_directory_check
-    --- PASS: TestDirectory/Read-only_directory_check (0.00s)
-=== RUN   TestDirectory/Write_permission_check
-    --- PASS: TestDirectory/Write_permission_check (0.00s)
-=== RUN   TestDirectory/Invalid_write_permission
-    --- PASS: TestDirectory/Invalid_write_permission (0.00s)
-=== RUN   TestDirectory/Valid_owner
-    --- PASS: TestDirectory/Valid_owner (0.00s)
-=== RUN   TestDirectory/Invalid_owner
-    --- PASS: TestDirectory/Invalid_owner (0.00s)
-=== RUN   TestDirectory/Valid_group
-    --- PASS: TestDirectory/Valid_group (0.00s)
-=== RUN   TestDirectory/Invalid_group
-    --- PASS: TestDirectory/Invalid_group (0.00s)
-=== RUN   TestDirectory/Multiple_valid_conditions
-    --- PASS: TestDirectory/Multiple_valid_conditions (0.00s)
-=== RUN   TestDirectory/Multiple_conditions_with_one_invalid
-    --- PASS: TestDirectory/Multiple_conditions_with_one_invalid (0.00s)
-PASS
-```
-
-#### Benchmark Test
-
-```log
-goos: linux
-goarch: amd64
-pkg: github.com/andreimerlescu/checkfs/directory
-cpu: Intel(R) Xeon(R) W-3245 CPU @ 3.20GHz
-BenchmarkDirectory
-BenchmarkDirectory/BasicChecks
-BenchmarkDirectory/BasicChecks-16         	 1414285	       853.2 ns/op
-BenchmarkDirectory/ExtensiveChecks
-BenchmarkDirectory/ExtensiveChecks-16     	  493394	      2062 ns/op
-PASS
-```
-
-## CheckFS Package
-
-### Unit Test
-
-```log
-=== RUN   TestFile
---- PASS: TestFile (0.00s)
-=== RUN   TestDirectory
---- PASS: TestDirectory (0.00s)
-PASS
-
-Process finished with the exit code 0
-```
-
-### Benchmark Test
-
-```log
-goos: linux
-goarch: amd64
-pkg: github.com/andreimerlescu/go-checkfs
-cpu: Intel(R) Xeon(R) W-3245 CPU @ 3.20GHz
-BenchmarkFile
-BenchmarkFile-16         	 1235120	       957.5 ns/op
-BenchmarkDirectory
-BenchmarkDirectory-16    	 1365142	       879.2 ns/op
-PASS
-
-Process finished with the exit code 
-```
-
+Throughout the `.Check() error` functionality, the `directory.Create{}` struct is processed in the `directory.Options{}`
+structure, but the default `directory.Create.Kind` is `directory.NoAction` which is a `uint8` set to `0`. No actions
+take by `.Run() error` are performed without `directory.NoAction` set to `0`. When you change this value, you are
+telling `checkfs` that it is okay to **destroy** the path and its contents in a non-reversible manner.
 
 ## License
 

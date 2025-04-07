@@ -13,9 +13,15 @@ import (
 type CreateKind int8
 
 const (
-	NoAction    CreateKind = iota
+	// NoAction will perform no action against the Create structure
+	NoAction CreateKind = iota
+
+	// IfNotExists CreateKind will perform an action on the Create structure if the path doesn't exist
 	IfNotExists CreateKind = iota
-	IfExists    CreateKind = iota
+
+	// IfExists CreateKind will perform an action on the Create structure if the path exists
+	// This is intended to be a DESTRUCTIVE act when used since it removes the file first before Create.Run() is called.
+	IfExists CreateKind = iota
 )
 
 // Create is used to describe the File you wish to Create, you are not required to set the Path,
