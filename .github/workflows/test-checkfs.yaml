@@ -65,6 +65,7 @@ jobs:
         run: |
           docker run --rm -v $(pwd):/go/src/checkfs -w /go/src/checkfs ${{ matrix.distro.image }} /bin/bash -c "
             curl -LO https://golang.org/dl/go${{ matrix.go-version }}.linux-amd64.tar.gz &&
+            yum install tar -y && 
             tar -C /usr/local -xzf go${{ matrix.go-version }}.linux-amd64.tar.gz &&
             export PATH=\$PATH:/usr/local/go/bin &&
             go mod download &&
