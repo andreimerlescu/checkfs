@@ -51,7 +51,7 @@ jobs:
             name: Rocky 9
           - image: amazonlinux:2023
             name: Amazon Linux 2023
-        go-version: ['1.17.12', '1.18.10', '1.19.13', '1.20.12', '1.21.7', '1.22.1', '1.23.2', '1.24.2']
+        go-version: ['1.20.12', '1.21.7', '1.22.1', '1.23.2', '1.24.2']
       fail-fast: false
 
     steps:
