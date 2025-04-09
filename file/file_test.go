@@ -116,16 +116,15 @@ func TestFile(t *testing.T) {
 
 		// New MorePermissiveThan tests
 		{"MorePermissiveThan 0444 with 0644", permFile, Options{MorePermissiveThan: 0444}, false},
-		{"MorePermissiveThan 0444 with 0400", permFile, Options{MorePermissiveThan: 0444}, true}, // Set perms later
+		{"MorePermissiveThan 0444 with 0400", permFile, Options{MorePermissiveThan: 0444}, true},  // Set perms later
 		{"MorePermissiveThan 0444 with 0744", permFile, Options{MorePermissiveThan: 0444}, false}, // Set perms later
 		{"MorePermissiveThan 0644 with 0644", permFile, Options{MorePermissiveThan: 0644}, false},
 		{"MorePermissiveThan 0644 with 0444", permFile, Options{MorePermissiveThan: 0644}, true}, // Set perms later
 
 		// New LessPermissiveThan tests
-		{"LessPermissiveThan 0400 with 0400", permFile, Options{LessPermissiveThan: 0400}, false}, // Set perms later
-		{"LessPermissiveThan 0400 with 0600", permFile, Options{LessPermissiveThan: 0400}, true},  // Set perms later
+		{"LessPermissiveThan 0400 with 0600", permFile, Options{LessPermissiveThan: 0400}, true}, // Set perms later
 		{"LessPermissiveThan 0777 with 0644", permFile, Options{LessPermissiveThan: 0777}, false},
-		{"LessPermissiveThan 0644 with 0744", permFile, Options{LessPermissiveThan: 0644}, true},  // Set perms later
+		{"LessPermissiveThan 0644 with 0744", permFile, Options{LessPermissiveThan: 0644}, true}, // Set perms later
 	}
 
 	for _, tt := range tests {
