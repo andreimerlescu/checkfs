@@ -45,6 +45,7 @@ func (create *Create) file() error {
 	if create.Kind != IfNotExists {
 		return nil
 	}
+	defer func() { create.Kind = NoAction }()
 	theFile, err := os.OpenFile(create.Path, create.OpenFlag, create.FileMode)
 	if err != nil {
 		return fmt.Errorf("could not create file: %w", err)
@@ -84,6 +85,7 @@ func (create *Create) replaceFile() error {
 	if err != nil {
 		return fmt.Errorf("could not remove file: %w", err)
 	}
+	create.Kind = IfNotExists
 	return create.file()
 }
 

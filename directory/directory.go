@@ -42,6 +42,7 @@ func (create *Create) directory() error {
 	if create.Kind != IfNotExists {
 		return nil
 	}
+	defer func() { create.Kind = NoAction }()
 	return os.MkdirAll(create.Path, create.FileMode)
 }
 
@@ -54,6 +55,7 @@ func (create *Create) replaceDirectory() error {
 	if err != nil {
 		return fmt.Errorf("could not remove directory: %w", err)
 	}
+	create.Kind = IfNotExists
 	return create.directory()
 }
 
