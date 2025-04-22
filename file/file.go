@@ -34,6 +34,20 @@ type Create struct {
 	Size     int64       // Size allows you to fill a file with zeros, throws error if applied to a directory
 }
 
+// NewCreate allows you to stack the .Run() call
+//
+// Example:
+//
+//			err := file.NewCreate(file.Create{
+//				Kind: file.IfNotExists,
+//				Path: "/opt/test.txt",
+//	  		OpenFlag: os.O_CREATE|os.O_TRUNC|os.O_WRONLY,
+//				FileMode: 0644,
+//			}).Run()
+func NewCreate(create *Create) *Create {
+	return &Create{}
+}
+
 const (
 	KB = 1 << (10 * iota)
 	MB

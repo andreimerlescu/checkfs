@@ -37,25 +37,39 @@ type Create struct {
 	Path     string      // Path stores where the resource will be created
 }
 
+// NewCreate allows you to stack the .Run() call. Using NewCreate outside of its
+// use case of checkfs.Directory(path, directory.Options{}) performs validation
+// checks against
+//
+// Example:
+//
+//	err := directory.NewCreate(directory.Create{
+//		Kind: directory.IfNotExists,
+//		Path: "/opt/test/path",
+//		FileMode: 0755,
+//	}).Run()
+func NewCreate(create *Create) *Create {
+	return &Create{}
+}
+
 // directory will consume a pointer to Create and apply the policy against the host
 func (create *Create) directory() error {
-	if create.Kind != IfNotExists {
-		return nil
+	_, err := os.Stat(create.Path)
+	if err != nil && os.IsNotExist(err) && create.Kind == IfNotExists {
+		return os.MkdirAll(create.Path, create.FileMode)
 	}
-	defer func() { create.Kind = NoAction }()
-	return os.MkdirAll(create.Path, create.FileMode)
+	return nil
 }
 
 // replaceDirectory  will consume a pointer to Create an apply the policy against the host
 func (create *Create) replaceDirectory() error {
-	if create.Kind != IfExists {
-		return nil
+	_, err := os.Stat(create.Path)
+	if (err == nil || os.IsExist(err)) && create.Kind == IfNotExists {
+		err := os.RemoveAll(create.Path)
+		if err != nil {
+			return fmt.Errorf("could not remove directory: %w", err)
+		}
 	}
-	err := os.RemoveAll(create.Path)
-	if err != nil {
-		return fmt.Errorf("could not remove directory: %w", err)
-	}
-	create.Kind = IfNotExists
 	return create.directory()
 }
 
@@ -110,6 +124,7 @@ func Directory(path string, opts Options) error {
 		}
 	}
 
+	// Create has Kind defined but no Path defined, set the path
 	if opts.Create.Kind != NoAction && len(opts.Create.Path) == 0 {
 		opts.Create.Path = path
 	}
