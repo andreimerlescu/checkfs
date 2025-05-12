@@ -29,6 +29,7 @@ func IsMorePermissiveThan(path string, minPerms os.FileMode) (bool, error) {
 	return perms&minPerms == minPerms, nil
 }
 
+// GetOwnerAndGroup retrieves the owner UID and group GID of a file or directory on Unix
 func GetOwnerAndGroup(path string) (uid, gid string, err error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -41,6 +42,7 @@ func GetOwnerAndGroup(path string) (uid, gid string, err error) {
 	return fmt.Sprint(stat.Uid), fmt.Sprint(stat.Gid), nil
 }
 
+// GetCreationTime retrieves the creation time of a file or directory on Unix
 func GetCreationTime(path string) (time.Time, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -50,7 +52,7 @@ func GetCreationTime(path string) (time.Time, error) {
 	if !ok {
 		return time.Time{}, fmt.Errorf("unable to get detailed stats for %s", path)
 	}
-	return time.Unix(stat.Ctim.Sec, stat.Ctim.Nsec), nil
+	return time.Unix(int64(stat.Ctim.Sec), int64(stat.Ctim.Nsec)), nil
 }
 
 // IsLessPermissiveThan checks if a file or directory’s permissions are no more permissive than the given mode
